@@ -1,79 +1,119 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart'; // THÊM DÒNG NÀY
 
 class NotificationService {
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
 
   // ========================== INIT ==========================
   Future<void> init() async {
+    // 1. Init timezone
     tz.initializeTimeZones();
-    // Thiết lập múi giờ Việt Nam
+    // FIX cứng timezone VN
     tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
 
+    // 2. Android settings
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+
     const settings = InitializationSettings(android: android);
 
-    // Sử dụng đúng cấu trúc có tham số 'settings:'
-    await _plugin.initialize(
-      settings: settings,
-      onDidReceiveNotificationResponse: (details) {},
-    );
+    // 3. Init plugin
+    await _plugin.initialize(settings);
 
+    // 4. Xin quyền notification
     await _requestPermission();
   }
 
-  // ========================== XIN QUYỀN ==========================
+  // ========================== REQUEST PERMISSION ==========================
   Future<void> _requestPermission() async {
     var status = await Permission.notification.status;
+
     if (status.isDenied) {
       await Permission.notification.request();
     }
+
+    if (status.isPermanentlyDenied) {
+      openAppSettings();
+    }
   }
 
-  // Hàm phụ tạo cấu hình Android
-  static AndroidNotificationDetails _createAndroidDetails() {
-    return const AndroidNotificationDetails(
-      'todo_channel',
-      'Nhắc việc Todo',
-      channelDescription: 'Thông báo hoàn thành nhiệm vụ',
+  static AndroidNotificationDetails _createAndroidDetails({
+    required String channelId,
+    required String channelName,
+    String? channelDescription,
+  }) {
+    return AndroidNotificationDetails(
+      channelId,
+      channelName,
+      channelDescription: channelDescription,
       importance: Importance.max,
       priority: Priority.high,
+      visibility: NotificationVisibility.public,
       playSound: true,
+      // SỬA: Chữ S viết hoa
+      enableVibration: true,
+      showWhen: true,
     );
   }
 
-  // ========================== GỬI THÔNG BÁO ==========================
-
-  /// Gửi thông báo khi hoàn thành nhiệm vụ (Hiển thị số lượng)
-  Future<void> showTaskNotification(int count) async {
-    final details = _createAndroidDetails();
-
-    // Sử dụng đúng tham số có tên để tránh lỗi "Too many positional arguments"
-    await _plugin.show(
-      id: 0,
-      title: 'Chúc mừng!',
-      body: 'Bạn đã hoàn thành $count nhiệm vụ.',
-      notificationDetails: NotificationDetails(android: details),
-    );
-  }
-
-  /// (Tùy chọn) Đặt lịch nhắc nhở theo giờ (Nếu bạn muốn dùng cho icon chuông)
-  Future<void> scheduleTaskReminder({
+  // Hàm tái sử dụng cho thiết lập thời gian để bật notification zonedSchedule
+  // Hàm tái sử dụng cho thiết lập thời gian để bật notification zonedSchedule
+  // Hàm tái sử dụng cho thiết lập thời gian để bật notification zonedSchedule
+  Future<void> _scheduleNotification({
     required int id,
     required String title,
+    required String body,
     required DateTime scheduledTime,
+    required AndroidNotificationDetails androidDetails,
   }) async {
-    final details = _createAndroidDetails();
-
     await _plugin.zonedSchedule(
-      id: id,
-      title: 'Nhắc nhở nhiệm vụ',
-      body: 'Đã đến giờ: $title',
-      scheduledDate: tz.TZDateTime.from(scheduledTime, tz.local),
-      notificationDetails: NotificationDetails(android: details),
+      id,
+      title,
+      body,
+      tz.TZDateTime.from(scheduledTime, tz.local),
+      NotificationDetails(android: androidDetails),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      // Đã xóa dòng uiLocalNotificationDateInterpretation vì thư viện bản mới không cần nữa
+    );
+  }
+
+  /// Hàm gửi thông báo tức thì
+  Future<void> showSimpleNotification({
+    int id = 0,
+    String title = 'Nhắc học từ vựng',
+    String body = 'Bạn đã học 5 từ mới hôm nay chưa?',
+  }) async {
+    final details = _createAndroidDetails(
+      channelId: 'learn_english_channel',
+      channelName: 'Học Anh Văn',
+    );
+
+    await _plugin.show(id, title, body, NotificationDetails(android: details));
+  }
+
+  /// Đặt lịch sau 1 khoảng thời gian delay
+  Future<void> scheduleNotificationAfter(
+    Duration delay,
+    String channelId,
+    String channelName,
+    String channelDescription,
+  ) async {
+    final details = _createAndroidDetails(
+      channelId: channelId,
+      channelName: channelName,
+      channelDescription: channelDescription,
+    );
+
+    final scheduledTime = tz.TZDateTime.now(tz.local).add(delay);
+
+    await _scheduleNotification(
+      id: 1,
+      title: channelName,
+      body: channelDescription,
+      scheduledTime: scheduledTime,
+      androidDetails: details,
     );
   }
 }
